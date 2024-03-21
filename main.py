@@ -26,7 +26,7 @@ def make_diff_pair_content(start_line_num, end_line_num, contents):
     orignal_content = []
     modify_content = []
     for line_num in range(start_line_num, end_line_num):
-        record = contents[line_num]
+        record = contents[line_num - 1]
         if record.startswith('-'):
             orignal_content.append(record[1:])
         elif record.startswith('+'):
@@ -44,28 +44,30 @@ def parse_diff(diff_content, block_sp_lines = diff_split_line_distance):
     modify_block_start_line = 0
     modify_black_end_line = 0
     diff_contents = []
-    
+    start_line_num = 0
     for line in diff_content.split('\n'):
         content.append(line)
         line_count = line_count + 1
         if line_count <= 4:
             continue
         if line.startswith("@@"):
+            start_line_num = line_count + 1
             continue
         if line.startswith("+") or line.startswith("-"):
             no_modify_line_counter = 0
             if not in_block:
                 modify_block_start_line = line_count - block_sp_lines
-                if modify_block_start_line < 0:
-                    modify_block_start_line = 0
+                if modify_block_start_line < start_line_num:
+                    modify_block_start_line = start_line_num
             in_block = True
         elif in_block:
             no_modify_line_counter += 1
             if no_modify_line_counter >= block_sp_lines:
                 modify_black_end_line = line_count
                 in_block = False
-                orignal_content, modify_content = make_diff_pair_content(modify_block_start_line, modify_black_end_line, content)                        
-                diff_contents.append(["\n".join(orignal_content), "\n".join(modify_content)])
+                if modify_block_start_line < modify_black_end_line:
+                    orignal_content, modify_content = make_diff_pair_content(modify_block_start_line, modify_black_end_line, content)                        
+                    diff_contents.append(["\n".join(orignal_content), "\n".join(modify_content)])
     
     if in_block:
         orignal_content, modify_content = make_diff_pair_content(modify_block_start_line, modify_black_end_line - 1, content)
@@ -89,7 +91,11 @@ def out_put_orignal(contnests):
 def output_all_diff(diff_contents):
     result = ""
     for pairs in diff_contents:
-        str = f"### 此段代码:\n ```{code_type}\n{pairs[0]}\n```\n### 被修改为:\n ```{code_type}\n{pairs[1]}\n```\n"
+        orignal = pairs[0].strip()
+        modify = pairs[1].strip()
+        if len(orignal) <= 0 and len(modify) <= 0:
+            continue
+        str = f"### 此段代码:\n ```{code_type}\n{orignal}\n```\n### 被修改为:\n ```{code_type}\n{modify}\n```\n"
         result += str
     return result
 
@@ -116,7 +122,7 @@ def process_every_commit(commit):
             output_str = output_all_diff(diff_pairs)
             
         if len(output_str) > 0:
-            markdown = f"## {commit['msg']}\n{output_str}`\n"
+            markdown = f"## {commit['revision']}{commit['msg']}\n{output_str}`\n"
             output_data.append(markdown)
             
     if len(output_data) > per_output_file_lines_limit:

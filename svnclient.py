@@ -129,7 +129,6 @@ class Client:
             diff_contents = []
             data = subprocess.Popen(diff_cmd, stdout=self.stdout, cwd=self.cwd).stdout.read()
             for b in data.split(b'\n'):
-                
                 str = None
                 try:
                     str = bytes.decode(b, decoding)
