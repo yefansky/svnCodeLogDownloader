@@ -3,6 +3,8 @@ import os
 import re
 import xml.etree.ElementTree
 
+search_batch_size = 20
+
 class Client:
     def __init__(self, cwd = os.getcwd(), stdout = subprocess.PIPE):
         self.cmd = ["svn"]
@@ -26,48 +28,71 @@ class Client:
     def to_relative_url(self, path):
         return re.sub(self.realpath, '', path)
 
-    def log(self, keywords=None, limit=None, decoding = 'utf8', every_commit_callback = None):
+    def log(self, keywords=None, limit=None, decoding='utf8', every_commit_callback=None):
         log_cmd = self.cmd + ["log", "--xml"]
-        
+
         if keywords and len(keywords) > 0:
             log_cmd += ["--search", " ".join(keywords)]
-            
-        if limit:
-            log_cmd += ["-l", str(limit)]
-            
-        log_cmd += ["-v"]
-        
+
+        start_revision = 0
+        while True:
+            batch_limit = limit if limit is None or limit <= search_batch_size else search_batch_size
+            log_content_batch, start_revision = self._fetch_logs(log_cmd, batch_limit, start_revision, every_commit_callback)
+            if not log_content_batch:
+                break
+            if limit:
+                limit -= batch_limit
+                if limit <= 0:
+                    break
+
+        if not every_commit_callback:
+            return self.log_content
+
+    def _fetch_logs(self, log_cmd, limit, start_revision, every_commit_callback):
         if self.log_content is None:
             self.log_content = []
 
-            data = subprocess.Popen(log_cmd, stdout = self.stdout, cwd = self.cwd).stdout.read()
-            root = xml.etree.ElementTree.fromstring(data)
+        log_cmd += ["-l", str(limit), "-v"]
 
-            for e in root.iter('logentry'):
-                entry_info = {x.tag: x.text for x in list(e)}
+        if start_revision > 0:
+            log_cmd += ["-r", "{}:HEAD".format(start_revision)]
 
-                log_entry = {
-                    'msg': entry_info.get('msg'),
-                    'author': entry_info.get('author'),
-                    'revision': int(e.get('revision')),
-                    'date': entry_info.get('date')
-                }
-                
-                cl = []
-                for f in e.iter('path'):
-                    action = f.attrib['action']
-                    path = f.text
-                    cl.append({"action" : action, "path" : path})
-                
-                log_entry['changelist'] = cl
+        data = subprocess.Popen(log_cmd, stdout=self.stdout, cwd=self.cwd).stdout.read()
+        root = xml.etree.ElementTree.fromstring(data)
 
-                if every_commit_callback:
-                    every_commit_callback(log_entry)
-                else:
-                    self.log_content.append(log_entry)
-                    
-        if not every_commit_callback:
-            return self.log_content
+        log_content_batch = []
+
+        for e in root.iter('logentry'):
+            entry_info = {x.tag: x.text for x in list(e)}
+
+            log_entry = {
+                'msg': entry_info.get('msg'),
+                'author': entry_info.get('author'),
+                'revision': int(e.get('revision')),
+                'date': entry_info.get('date')
+            }
+
+            cl = []
+            for f in e.iter('path'):
+                action = f.attrib['action']
+                path = f.text
+                cl.append({"action": action, "path": path})
+
+            log_entry['changelist'] = cl
+
+            log_content_batch.append(log_entry)
+
+            if every_commit_callback:
+                every_commit_callback(log_entry)
+            else:
+                self.log_content.append(log_entry)
+
+        if log_content_batch:
+            last_revision = log_content_batch[-1]['revision']
+        else:
+            last_revision = start_revision
+
+        return log_content_batch, last_revision
         
     def update_diff_cache(self, file_name, start_version, end_version, diff_content):
         if file_name not in self.diff_cache:

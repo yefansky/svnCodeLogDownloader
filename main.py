@@ -105,7 +105,6 @@ def output_single_file(contents):
             
 def process_every_commit(commit):
     global output_data, file_index, output_file
-    instruction_str = ""
     output_str = ""
     for file in commit['changelist']:
         action  = file['action']
