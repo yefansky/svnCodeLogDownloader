@@ -2,6 +2,7 @@
 import os
 import re
 import xml.etree.ElementTree
+from lxml import etree
 
 search_batch_size = 20
 
@@ -24,6 +25,21 @@ class Client:
             if relative_url_element is not None:
                 return relative_url_element.text
         return None  # 或者返回适当的默认值
+    
+    def get_info(self, *keywords):
+        result = {}
+        log_cmd = self.cmd + ["info", "--xml"]
+        data = subprocess.Popen(log_cmd, stdout = self.stdout, cwd = self.cwd).stdout.read()
+        root = etree.fromstring(data)
+        if root is not None:
+            for key in keywords:
+                values = root.xpath(f'//{key}')
+                value = None
+                if values is not None and len(values) > 0:
+                    value = values[0]
+                if (value is not None) and (value.text is not None):
+                    result[key] = value.text
+        return result  # 或者返回适当的默认值
         
     def to_relative_url(self, path):
         return re.sub(self.realpath, '', path)

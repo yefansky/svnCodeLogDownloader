@@ -2,6 +2,8 @@
 import subprocess
 import re
 import json
+import os
+from urllib.parse import quote_plus
 
 local_dir = "K:\\Sword8\\Source\\"
 allowed_extensions = [".lua", ".c", ".cpp", ".h", ".lh", ".hpp"]
@@ -18,6 +20,7 @@ code_type = 'c++'
 output_data = []
 output_file = None
 file_index = 1
+output_dir = 'output/svndata/'
 # ------------------
 
 client = svnclient.Client(cwd = local_dir, stdout = subprocess.PIPE)
@@ -99,9 +102,16 @@ def output_all_diff(diff_contents):
         result += str
     return result
 
+def create_file_with_dirs(file_path):
+    dir_path = os.path.dirname(file_path)
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
 def output_single_file(contents):
     global output_file, output_file_prefix, file_index
-    output_file = open(f"{output_file_prefix}_{file_index}.txt" , "w", encoding="utf-8")
+    file_path = f"{output_dir}/{output_file_prefix}_{file_index}.txt"
+    create_file_with_dirs(file_path)
+    output_file = open(file_path , "w", encoding="utf-8")
     file_index = file_index + 1
     str = "".join(contents)
     print(str)
@@ -130,5 +140,8 @@ def process_every_commit(commit):
         output_data = []
     return
 
+infos = client.get_info('url')
+svn_url = infos['url']
+output_dir = quote_plus(svn_url)
 client.log(decoding = encode_type, keywords=filter_keywords, limit=search_count_limit, every_commit_callback = process_every_commit)
 output_single_file(output_data)
