@@ -13,7 +13,10 @@ per_output_file_lines_limit = 100
 encode_type = 'gbk'
 diff_split_line_distance = 5
 filter_keywords = []
-code_type = 'c++'
+code_file_ext_dec = {
+    'c++':['c', 'h', 'hpp', 'cc', 'cpp'],
+    'lua':['lua', 'lh', 'ls']
+}
 
 # glboal define 
 # ------------------
@@ -24,6 +27,13 @@ output_dir = 'output/svndata/'
 # ------------------
 
 client = svnclient.Client(cwd = local_dir, stdout = subprocess.PIPE)
+
+def get_code_type(file_path):
+    file_ext = file_path.split('.')[-1].lower()  # 获取文件扩展名并转换为小写
+    for code_type, extensions in code_file_ext_dec.items():
+        if file_ext in extensions:
+            return code_type
+    return ""  # 如果找不到对应的语言，则返回"Unknown"
 
 def make_diff_pair_content(start_line_num, end_line_num, contents):
     orignal_content = []
@@ -91,7 +101,7 @@ def out_put_orignal(contnests):
         results.append(line[1:])
     return "".join(results)
 
-def output_all_diff(diff_contents):
+def output_all_diff(diff_contents, code_type):
     result = ""
     for pairs in diff_contents:
         orignal = pairs[0].strip()
@@ -129,10 +139,11 @@ def process_every_commit(commit):
             diff_content = client.diff(commit['revision'], decoding = 'gbk',  context_lines=20, file_name = file_name)
             #orignal_content = out_put_orignal(diff_content)
             diff_pairs = parse_diff(diff_content)
-            output_str = output_all_diff(diff_pairs)
+            code_type_str = get_code_type(file_name)
+            output_str = output_all_diff(diff_pairs, code_type_str)
             
         if len(output_str) > 0:
-            markdown = f"## {commit['revision']}{commit['msg']}\n{output_str}`\n"
+            markdown = f"## {commit['revision']}{commit['msg']}\n### FILE: {file_name}\n:{output_str}`\n"
             output_data.append(markdown)
             
     if len(output_data) > per_output_file_lines_limit:
