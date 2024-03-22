@@ -3,6 +3,7 @@ import os
 import re
 import xml.etree.ElementTree
 from lxml import etree
+import copy
 
 search_batch_size = 20
 
@@ -53,7 +54,8 @@ class Client:
         start_revision = 0
         while True:
             batch_limit = limit if limit is None or limit <= search_batch_size else search_batch_size
-            log_content_batch, start_revision = self._fetch_logs(log_cmd, batch_limit, start_revision, every_commit_callback)
+            cmd = copy.deepcopy(log_cmd)
+            log_content_batch, start_revision = self._fetch_logs(cmd, batch_limit, start_revision, start_revision - batch_limit, every_commit_callback)
             if not log_content_batch:
                 break
             if limit:
@@ -64,14 +66,16 @@ class Client:
         if not every_commit_callback:
             return self.log_content
 
-    def _fetch_logs(self, log_cmd, limit, start_revision, every_commit_callback):
+    def _fetch_logs(self, log_cmd, limit, start_revision, end_revision, every_commit_callback):
         if self.log_content is None:
             self.log_content = []
 
         log_cmd += ["-l", str(limit), "-v"]
 
-        if start_revision > 0:
-            log_cmd += ["-r", "{}:HEAD".format(start_revision)]
+        if start_revision == 0:
+            log_cmd += ["-r", "HEAD:{}".format(start_revision)]
+        else:
+            log_cmd += ["-r", "{}:{}".format(start_revision, end_revision)]
 
         data = subprocess.Popen(log_cmd, stdout=self.stdout, cwd=self.cwd).stdout.read()
         root = xml.etree.ElementTree.fromstring(data)

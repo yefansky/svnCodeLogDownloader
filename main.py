@@ -5,7 +5,7 @@ import json
 import os
 from urllib.parse import quote_plus
 
-local_dir = "K:\\Sword8\\Source\\"
+local_dir = "K:\\Sword8\\"
 allowed_extensions = [".lua", ".c", ".cpp", ".h", ".lh", ".hpp"]
 output_file_prefix = "svndata"        
 search_count_limit = 10000
