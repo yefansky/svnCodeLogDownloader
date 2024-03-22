@@ -21,12 +21,37 @@ code_file_ext_dec = {
 # glboal define 
 # ------------------
 output_data = []
+output_revision_range = []
 output_file = None
-file_index = 1
 output_dir = 'output/svndata/'
+cache_index = []
 # ------------------
 
 client = svnclient.Client(cwd = local_dir, stdout = subprocess.PIPE)
+
+def build_cache_index(folder_path):
+    """
+    读取指定文件夹中的所有txt文件名，并建立索引表。
+    返回一个字典，键为文件名，值为起始和结束版本号的元组。
+    """
+    index = {}
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith('.txt'):
+            parts = file_name[:-4].split('-')
+            if len(parts) == 2:
+                start_revision, end_revision = int(parts[0]), int(parts[1])
+                index[file_name] = (start_revision, end_revision)
+    return index
+
+def query_revision_is_in_cache(index, query_revision):
+    """
+    查询指定的版本号是否已经被缓存了。
+    返回True或False。
+    """
+    for file_name, (start_revision, end_revision) in index.items():
+        if query_revision <= start_revision and query_revision >= end_revision:
+            return True
+    return False
 
 def get_code_type(file_path):
     file_ext = file_path.split('.')[-1].lower()  # 获取文件扩展名并转换为小写
@@ -117,42 +142,50 @@ def create_file_with_dirs(file_path):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
-def output_single_file(contents):
-    global output_file, output_file_prefix, file_index
-    file_path = f"{output_dir}/{output_file_prefix}_{file_index}.txt"
+def output_single_file(contents, output_revision_range):
+    global output_file, output_file_prefix
+    file_path = f"{output_dir}/{output_revision_range[0]}-{output_revision_range[-1]}.txt"
     create_file_with_dirs(file_path)
     output_file = open(file_path , "w", encoding="utf-8")
-    file_index = file_index + 1
     str = "".join(contents)
     print(str)
     output_file.write(str)
     output_file.close()
-    contents = []
+    contents.clear()
+    output_revision_range.clear()
             
 def process_every_commit(commit):
-    global output_data, file_index, output_file
+    global output_data, output_file, cache_index
     output_str = ""
+    revision = commit['revision']
+    
+    if query_revision_is_in_cache(cache_index, revision):
+        return
+    
+    output_revision_range.append(revision)
+    
     for file in commit['changelist']:
         action  = file['action']
         file_name = file['path']
         if action == "M" and any(file_name.lower().endswith(ext.lower()) for ext in allowed_extensions):
-            diff_content = client.diff(commit['revision'], decoding = 'gbk',  context_lines=20, file_name = file_name)
+            diff_content = client.diff(revision, decoding = 'gbk',  context_lines=20, file_name = file_name)
             #orignal_content = out_put_orignal(diff_content)
             diff_pairs = parse_diff(diff_content)
             code_type_str = get_code_type(file_name)
             output_str = output_all_diff(diff_pairs, code_type_str)
             
         if len(output_str) > 0:
-            markdown = f"## {commit['revision']}{commit['msg']}\n### FILE: {file_name}\n:{output_str}`\n"
+            markdown = f"## {revision}{commit['msg']}\n### FILE: {file_name}\n{output_str}`\n"
             output_data.append(markdown)
             
     if len(output_data) > per_output_file_lines_limit:
-        output_single_file(output_data)
-        output_data = []
+        output_single_file(output_data, output_revision_range)
     return
 
 infos = client.get_info('url')
 svn_url = infos['url']
 output_dir = quote_plus(svn_url)
+
+cache_index = build_cache_index(output_dir)
 client.log(decoding = encode_type, keywords=filter_keywords, limit=search_count_limit, every_commit_callback = process_every_commit)
-output_single_file(output_data)
+output_single_file(output_data, output_revision_range)
