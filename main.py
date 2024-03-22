@@ -30,10 +30,6 @@ cache_index = []
 client = svnclient.Client(cwd = local_dir, stdout = subprocess.PIPE)
 
 def build_cache_index(folder_path):
-    """
-    读取指定文件夹中的所有txt文件名，并建立索引表。
-    返回一个字典，键为文件名，值为起始和结束版本号的元组。
-    """
     index = {}
     for file_name in os.listdir(folder_path):
         if file_name.endswith('.txt'):
@@ -44,10 +40,6 @@ def build_cache_index(folder_path):
     return index
 
 def query_revision_is_in_cache(index, query_revision):
-    """
-    查询指定的版本号是否已经被缓存了。
-    返回True或False。
-    """
     for file_name, (start_revision, end_revision) in index.items():
         if query_revision <= start_revision and query_revision >= end_revision:
             return True
@@ -145,12 +137,14 @@ def create_file_with_dirs(file_path):
 def output_single_file(contents, output_revision_range):
     global output_file, output_file_prefix
     file_path = f"{output_dir}/{output_revision_range[0]}-{output_revision_range[-1]}.txt"
+    tmp_file_path = f"{output_dir}/{output_revision_range[0]}-{output_revision_range[-1]}.tmp"
     create_file_with_dirs(file_path)
-    output_file = open(file_path , "w", encoding="utf-8")
+    output_file = open(tmp_file_path , "w", encoding="utf-8")
     str = "".join(contents)
     print(str)
     output_file.write(str)
     output_file.close()
+    os.rename(tmp_file_path, file_path)
     contents.clear()
     output_revision_range.clear()
             
@@ -187,5 +181,13 @@ svn_url = infos['url']
 output_dir = quote_plus(svn_url)
 
 cache_index = build_cache_index(output_dir)
-client.log(decoding = encode_type, keywords=filter_keywords, limit=search_count_limit, every_commit_callback = process_every_commit)
-output_single_file(output_data, output_revision_range)
+
+def in_cache_checker(r):
+    return query_revision_is_in_cache(cache_index, r)
+
+client.log(decoding = encode_type, keywords=filter_keywords, limit=search_count_limit, 
+    every_commit_callback = process_every_commit, 
+    ignore_revision_callback = in_cache_checker
+)
+if len(output_data) > 0:
+    output_single_file(output_data, output_revision_range)

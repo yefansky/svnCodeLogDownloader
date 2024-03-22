@@ -45,7 +45,7 @@ class Client:
     def to_relative_url(self, path):
         return re.sub(self.realpath, '', path)
 
-    def log(self, keywords=None, limit=None, decoding='utf8', every_commit_callback=None):
+    def log(self, keywords=None, limit=None, decoding='utf8', every_commit_callback=None, ignore_revision_callback=None):
         log_cmd = self.cmd + ["log", "--xml"]
 
         if keywords and len(keywords) > 0:
@@ -55,8 +55,11 @@ class Client:
         while True:
             batch_limit = limit if limit is None or limit <= search_batch_size else search_batch_size
             cmd = copy.deepcopy(log_cmd)
-            log_content_batch, start_revision = self._fetch_logs(cmd, batch_limit, start_revision, start_revision - batch_limit, every_commit_callback)
-            if not log_content_batch:
+            start_revision, continue_flag = self._fetch_logs(
+                cmd, batch_limit, start_revision, start_revision - batch_limit, 
+                every_commit_callback, ignore_revision_callback
+            )
+            if not continue_flag:
                 break
             if limit:
                 limit -= batch_limit
@@ -66,9 +69,19 @@ class Client:
         if not every_commit_callback:
             return self.log_content
 
-    def _fetch_logs(self, log_cmd, limit, start_revision, end_revision, every_commit_callback):
+    def _fetch_logs(self, log_cmd, limit, start_revision, end_revision, every_commit_callback, ignore_revision_callback):
         if self.log_content is None:
             self.log_content = []
+           
+        need_query = True 
+        if ignore_revision_callback and start_revision > 0:
+            need_query = False 
+            for r in range(start_revision, end_revision, -1):
+                if not ignore_revision_callback(r):
+                    need_query = True
+                    break
+        if not need_query:
+            return end_revision, True
 
         log_cmd += ["-l", str(limit), "-v"]
 
@@ -112,7 +125,7 @@ class Client:
         else:
             last_revision = start_revision
 
-        return log_content_batch, last_revision
+        return last_revision, len(log_content_batch) > 0
         
     def update_diff_cache(self, file_name, start_version, end_version, diff_content):
         if file_name not in self.diff_cache:
